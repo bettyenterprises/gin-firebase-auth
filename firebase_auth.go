@@ -2,6 +2,7 @@ package ginfirebaseauth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -15,12 +16,21 @@ const valName = "FIREBASE_ID_TOKEN"
 
 // FirebaseAuthMiddleware is middleware for Firebase Authentication
 type FirebaseAuthMiddleware struct {
-	cli          *auth.Client
-	unAuthorized func(c *gin.Context)
+	cli           *auth.Client
+	unAuthorized  func(c *gin.Context)
+	useFakeTokens bool
 }
 
 // New is constructor of the middleware
-func New(credFileName string, unAuthorized func(c *gin.Context)) (*FirebaseAuthMiddleware, error) {
+func New(credFileName string, unAuthorized func(c *gin.Context), useFakeTokens bool) (*FirebaseAuthMiddleware, error) {
+	if useFakeTokens {
+		return &FirebaseAuthMiddleware{
+			cli:           nil,
+			unAuthorized:  unAuthorized,
+			useFakeTokens: useFakeTokens,
+		}, nil
+	}
+
 	opt := option.WithCredentialsFile(credFileName)
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
@@ -31,8 +41,9 @@ func New(credFileName string, unAuthorized func(c *gin.Context)) (*FirebaseAuthM
 		return nil, err
 	}
 	return &FirebaseAuthMiddleware{
-		cli:          auth,
-		unAuthorized: unAuthorized,
+		cli:           auth,
+		unAuthorized:  unAuthorized,
+		useFakeTokens: useFakeTokens,
 	}, nil
 }
 
@@ -41,7 +52,7 @@ func (fam *FirebaseAuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.Request.Header.Get("Authorization")
 		token := strings.Replace(authHeader, "Bearer ", "", 1)
-		idToken, err := fam.cli.VerifyIDToken(context.Background(), token)
+		idToken, err := fam.verifyToken(token)
 		if err != nil {
 			if fam.unAuthorized != nil {
 				fam.unAuthorized(c)
@@ -56,6 +67,19 @@ func (fam *FirebaseAuthMiddleware) MiddlewareFunc() gin.HandlerFunc {
 		c.Set(valName, idToken)
 		c.Next()
 	}
+}
+
+func (fam *FirebaseAuthMiddleware) verifyToken(token string) (*auth.Token, error) {
+	if fam.useFakeTokens {
+		if token == "bad" {
+			return nil, errors.New("bad token [test-mode]")
+		}
+		//TODO: enrich the fake token with more data
+		return &auth.Token{
+			UID: "test",
+		}, nil
+	}
+	return fam.cli.VerifyIDToken(context.Background(), token)
 }
 
 // ExtractClaims extracts claims

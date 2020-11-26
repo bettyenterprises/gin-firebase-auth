@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
+	ginfirebaseauth "github.com/bettyenterprises/gin-firebase-auth"
 	"github.com/gin-gonic/gin"
-	ginfirebaseauth "github.com/lon9/gin-firebase-auth"
 )
 
 func main() {
